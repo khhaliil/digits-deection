@@ -1,0 +1,160 @@
+import os
+import cv2
+import numpy as np
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+from keras.preprocessing.image import ImageDataGenerator
+from keras.utils.np_utils import to_categorical
+from keras.models import Sequential
+from keras.layers.convolutional import Conv2D, MaxPooling2D
+from keras.layers import Dropout, Dense, Flatten
+from tensorflow.keras.optimizers import Adam
+import tensorflow as tf
+import pickle
+from keras import Model
+
+###########################
+cameraNum = 0
+##############################
+testRatio = 0.15
+ValidationRation = 0.15
+path = "res/num"
+imgDim = (50, 50, 3)
+# preprocc parameters
+width_range = 0.2
+height_range = 0.15
+zoom_range = 0.20
+shear_range = 0.15
+rotation_range = 20
+# leNet model param
+noOfFilters = 60
+sizeOfFilter1 = (5, 5)
+sizeOfFilter2 = (3, 3)
+sizeOfPool = (2, 2)
+noOfNodes = 500
+########################"
+batchSize = 60
+epochVal = 18
+######## IMPORTING ###########*
+images = []
+classNo = []
+myList = os.listdir(path)
+print(path, "contient: ", myList)
+nuOfClasses = len(myList)
+print("importing Data....")
+for x in range(0, nuOfClasses):
+    myPicList = os.listdir(path + "/" + str(x))
+    for j in myPicList:
+        curImg = cv2.imread(path + "/" + str(x) + "/" + j)
+        curImg = cv2.resize(curImg, (50, 50))
+        images.append(curImg)
+        classNo.append(x)
+    print(x, end=".")
+print("")
+# print(len(images))
+# print(len(classNo))
+images = np.array(images)
+classNo = np.array(classNo)
+print(images.shape)
+print(classNo.shape)
+
+################# SPLIT ##############
+x_train, x_test, y_train, y_test = train_test_split(images, classNo, test_size=testRatio)
+x_train, x_validation, y_train, y_validation = train_test_split(x_train, y_train, test_size=ValidationRation)
+print("x train : ", x_train.shape)
+print("x test :  ", x_test.shape)
+numOfSamples = []
+for x in range(0, nuOfClasses):
+    numOfSamples.append(len(np.where(y_train == x)[0]))
+print(numOfSamples)
+
+plt.figure(figsize=(8, 4))
+plt.bar(range(0, nuOfClasses), numOfSamples)
+plt.title("Nombre of images for each class")
+plt.xlabel("class ID")
+plt.ylabel("nombre d'images")
+plt.show()
+
+
+############## pre-processing ###########################
+def preprocess(img):
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    img = cv2.equalizeHist(img)
+    img = img / 255
+    return img
+
+
+########## test du pre-proc ###################
+
+# img = x_train[30]
+# img = cv2.resize(img,(200,200))
+# cv2.imshow("original",img)
+# img1 =preprocess(img)
+# img1 = cv2.resize(img1,(200,200))
+# cv2.imshow("pre-proc",img1)
+# cv2.waitKey(0)
+
+####### transformation ################
+
+x_train = np.array(list(map(preprocess, x_train)))
+x_test = np.array(list(map(preprocess, x_test)))
+x_validation = np.array(list(map(preprocess, x_validation)))
+x_train = x_train.reshape(x_train.shape[0], x_train.shape[2], x_train.shape[2], 1)
+x_test = x_test.reshape(x_test.shape[0], x_test.shape[2], x_test.shape[2], 1)
+x_validation = x_validation.reshape(x_validation.shape[0], x_validation.shape[2], x_validation.shape[2], 1)
+dataGen = ImageDataGenerator(width_shift_range=width_range, height_shift_range=height_range, zoom_range=zoom_range,
+                             shear_range=shear_range, rotation_range=rotation_range)
+dataGen.fit(x_train)
+
+y_train = to_categorical(y_train, nuOfClasses)
+y_test = to_categorical(y_test, nuOfClasses)
+y_validation = to_categorical(y_validation, nuOfClasses)
+
+
+def Mymodel():
+    model = Sequential()
+    model.add((Conv2D(noOfFilters, sizeOfFilter1, input_shape=(imgDim[0], imgDim[1], 1), activation="relu")))
+    model.add((Conv2D(noOfFilters, sizeOfFilter1, activation="relu")))
+    model.add(MaxPooling2D(pool_size=sizeOfPool))
+    model.add((Conv2D(noOfFilters / 2, sizeOfFilter2, activation="relu")))
+    model.add((Conv2D(noOfFilters / 2, sizeOfFilter2, activation="relu")))
+    model.add(MaxPooling2D(pool_size=sizeOfPool))
+    model.add(Dropout(0.5))
+    model.add(Flatten())
+    model.add(Dense(noOfNodes, activation="relu"))
+    model.add(Dropout(0.5))
+    model.add(Dense(nuOfClasses, activation="softmax"))
+    model.compile(Adam(learning_rate=0.001), loss='categorical_crossentropy', metrics=['accuracy'])
+    return model
+
+
+model = Mymodel()
+print(model.summary())
+history = model.fit(dataGen.flow(x_train, y_train, batch_size=batchSize), steps_per_epoch=len(x_train)/batchSize  , epochs=epochVal,
+                    validation_data=(x_validation, y_validation), shuffle=1)
+
+plt.figure(1)
+plt.plot(history.history["loss"])
+plt.plot(history.history["val_loss"])
+plt.legend(["training", "validation"])
+plt.title('loss')
+plt.xlabel("epch")
+
+plt.figure(2)
+plt.plot(history.history["accuracy"])
+plt.plot(history.history["val_accuracy"])
+plt.legend(["training", "validation"])
+plt.title('accuracy')
+plt.xlabel("epch")
+
+plt.show()
+score = model.evaluate(x_test, y_test, verbose=0)
+print("test Score = ", score[0])
+print("test Acc = ", score[1])
+################# SAVING ##############""
+#tf.saved_model.save(model,"C:\\Users\\MSI\\PycharmProjects\\pythonProject\\Textdetection\\")
+pickle_out = open("modelTrained1\modelTrained2.p", "wb")
+pickle.dump(model, pickle_out)
+pickle_out.close()
+
+
